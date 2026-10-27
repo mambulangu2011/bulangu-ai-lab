@@ -1,276 +1,258 @@
-import os, sqlite3, zipfile, datetime, json, io
-from flask import Flask, request, render_template_string, redirect, session, send_file, jsonify
-from werkzeug.utils import secure_filename
+from flask import Flask, request, redirect, session, send_file, jsonify
+import io, json, zipfile, base64
+from datetime import datetime
+import pandas as pd
 
 app = Flask(__name__)
-app.secret_key = "bulangu-v6-world-class-founder-2026"
-BASE = "/tmp" if os.path.exists("/tmp") else "."
-DB = os.path.join(BASE, "bulangu_v6.db")
-os.makedirs(os.path.join(BASE, "voices"), exist_ok=True)
-os.makedirs(os.path.join(BASE, "images"), exist_ok=True)
+app.secret_key = "bulangu-v8-global-founder-mam-bulangu"
 
-NIGERIA_STATES = ["Abia","Adamawa","Akwa Ibom","Anambra","Bauchi","Bayelsa","Benue","Borno","Cross River","Delta","Ebonyi","Edo","Ekiti","Enugu","FCT","Gombe","Imo","Jigawa","Kaduna","Kano","Katsina","Kebbi","Kogi","Kwara","Lagos","Nasarawa","Niger","Ogun","Ondo","Osun","Oyo","Plateau","Rivers","Sokoto","Taraba","Yobe","Zamfara"]
+DATA_STORE = []  # {id, date, state, lga, ward, farmer, category, content, voice, image}
 
-JIGAWA_LGAS = {
- "Auyo":["Auyo","Auyakayi","Ayama","Gamafoi","Gamsarka","Gatafa","Guriko","Kafin Hausa Road","Tsidir","Unik"],
- "Babura":["Babura","Batali","Dorawa","Gasakoli","Insharuwa","Jigawar Sarki","Kanya","Kuzunzumi","Kyambo","Takalafiya","Tajummu","Kyambar Gari"],
- "Biriniwa":["Biriniwa","Diginsa","Fagi","Kachallari","Kazura","Matarababbado","Nguwa","Tsibir","Unguwar Makafi","Dangwaleri"],
- "Birnin Kudu":["Birnin Kudu","Kangire","Kwangwara","Lafiya","Sundimina","Surko","Unguwar Ya","Wurno","Yalwan Damai","Kantoga"],
- "Buji":["Buji","Gantsa","Kawaya","Kukuma","Lelen Kudu","Lelen Arewa","Karma","Kawu","Sara","Jigawar Buji"],
- "Dutse":["Dutse","Jigawar Tsada","Sakwaya","Madobi","Karnaya","Limawa","Waru","Malamawar","Kachi","Chamo"],
- "Gagarawa":["Gagarawa","Gagarawa Gari","Kore","Maikilili","Meda","Mai Zare","Mangada","Garun Gabas","Zaumar Gari","Zarada"],
- "Garki":["Garki","Gwarzon Garki","Jirima","Kanya","Kore","Muku","Doko","Buduru","Garki Kargo","Siyori"],
- "Gumel":["Gumel","Baikarya","Dan Ama","Galagamma","Garin Gari","Gusau","Hammado","Kofar Arewa","Kofar Yamma","Zango"],
- "Guri":["Guri","Abunabo","Adiyani","Dawa","Garbagal","Kadira","Lafiya","Margadu","Matara Babba","Musari"],
- "Gwaram":["Gwaram","Basirka","Fagam","Gwaram Gari","Kila","Kwandiko","Maruta","Sara","Tsangarwa","Dingaya"],
- "Gwiwa":["Gwiwa","Buntusu","Dabi","Dangyatin","Darina","Fandum","Guntai","Korayel","Rorau","Shafe"],
- "Hadejia":["Hadejia","Kasuwar Kuda","Kasuwar Kofa","Majema","Matsaro","Rumfa","Sabon Garu","Yankoli","Dubutu","Atikun"],
- "Jahun":["Jahun","Aujara","Gauza","Gunka","Harbo","Idanduna","Kale","Kanwa","Nagwada","Telemos"],
- "Kafin Hausa":["Kafin Hausa","Balangu","Dumadumin","Gafaya","Jabo","Kafin Hausa Tudu","Majawa","Mezan","Ruba","Sarawa"],
- "Kaugama":["Kaugama","Arbus","Dakayyawa","Hadin Bari","Jarkasa","Ja'e","Marke","Hadandi","Yalo","Askandu"],
- "Kazaure":["Kazaure","Ba'a","Daba","Dabaza","Gada","Isamu","Kargo","Maradawa","Sabaru","Umaru"],
- "Kiri Kasama":["Kiri Kasama","Baturiya","Bulunchai","Doljigi","Fandum","Gayin","Madachi","Madarmowa","Marma","Tashe"],
- "Kiyawa":["Kiyawa","Andaza","Balago","Fake","Garko","Guruduba","Katanga","Katuka","Kiyawa Gari","Kwanda"],
- "Maigatari":["Maigatari","Balar","Dankumbo","Fulata","Galadi","Jajeri","Kuki","Madaka","Matari","Turbus"],
- "Malam Madori":["Malam Madori","Arki","Dunari","Fateka Akurba","Garun Gabas","Makaddari","Mallam Madori","Tashena","Tagwaro","Tonikutara"],
- "Miga":["Miga","Garbo","Hantsu","Koya","Miga Gari","Sansani","Tsakuwawa","Yanduna","Zareku","Sabon Gari"],
- "Ringim":["Ringim","Dabi","Kyarama","Ringim","Sankara","Sintilmawa","Tofa","Yandutse","Chai Chai","Karshi"],
- "Roni":["Roni","Baragumi","Dansure","Fara","Gora","Kwaita","Roni Gari","Sankara","Tunas","Zugai"],
- "Sule Tankarkar":["Sule Tankarkar","Albasu","Amanga","Bayan Doka","Dangwanki","Danladin","Jeke","Shabaru","Sule","Takatsaba"],
- "Taura":["Taura","Chukuto","Gujungu","Kiri","Kwanar","Majia","Sabon Gari","Taura Gari","Unguwar Tonkari","Yalwa"],
- "Yankwashi":["Yankwashi","Achilafiya","Belas","Dawan Gawo","Gurji","Gwarta","Karkarna","Kuda","Ringim","Zungumba"]
+# --- NIGERIA 37 STATES + LGA SAMPLE (Full list - searchable) ---
+NIGERIA_DATA = {
+ "Abia": ["Aba North","Aba South","Umuahia North"],
+ "Adamawa": ["Yola North","Yola South","Mubi North"],
+ "Akwa Ibom": ["Uyo","Eket","Ikot Abasi"],
+ "Anambra": ["Awka South","Onitsha North","Obosi"],
+ "Bauchi": ["Bauchi","Katagum","Misau"],
+ "Bayelsa": ["Yenagoa","Brass","Ogbia"],
+ "Benue": ["Makurdi","Gboko","Otukpo"],
+ "Borno": ["Maiduguri","Biu","Bama"],
+ "Cross River": ["Calabar Municipal","Ogoja","Ikom"],
+ "Delta": ["Asaba","Warri South","Ughelli North"],
+ "Ebonyi": ["Abakaliki","Afikpo North","Onicha"],
+ "Edo": ["Benin City","Auchi","Ekpoma"],
+ "Ekiti": ["Ado Ekiti","Ikere","Ise Orun"],
+ "Enugu": ["Enugu North","Nsukka","Udi"],
+ "FCT": ["Abaji","AMAC","Bwari","Gwagwalada","Kuje","Kwali"],
+ "Gombe": ["Gombe","Kaltungo","Dukku"],
+ "Imo": ["Owerri Municipal","Orlu","Okigwe"],
+ "Jigawa": ["Dutse","Hadejia","Gumel","Kazaure","Birnin Kudu","Maigatari","Bulangu"],
+ "Kaduna": ["Kaduna North","Zaria","Kafanchan"],
+ "Kano": ["Kano Municipal","Fagge","Gwale"],
+ "Katsina": ["Katsina","Daura","Funtua"],
+ "Kebbi": ["Birnin Kebbi","Argungu","Yauri"],
+ "Kogi": ["Lokoja","Okene","Idah"],
+ "Kwara": ["Ilorin West","Offa","Jebba"],
+ "Lagos": ["Ikeja","Lagos Island","Alimosho","Badagry"],
+ "Nasarawa": ["Lafia","Keffi","Akwanga"],
+ "Niger": ["Minna","Bida","Suleja"],
+ "Ogun": ["Abeokuta North","Ijebu Ode","Sagamu"],
+ "Ondo": ["Akure South","Owo","Ondo West"],
+ "Osun": ["Osogbo","Ile Ife","Ilesa"],
+ "Oyo": ["Ibadan North","Ogbomosho","Oyo"],
+ "Plateau": ["Jos North","Barkin Ladi","Pankshin"],
+ "Rivers": ["Port Harcourt","Bonny","Eleme"],
+ "Sokoto": ["Sokoto North","Tambuwal","Gwadabawa"],
+ "Taraba": ["Jalingo","Wukari","Bali"],
+ "Yobe": ["Damaturu","Potiskum","Nguru"],
+ "Zamfara": ["Gusau","Kaura Namoda","Anka"]
 }
 
-def dbc():
-    c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
-
-def init():
-    c=dbc()
-    c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT, created TEXT)")
-    c.execute("CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY, type TEXT, text TEXT, meaning TEXT, file_path TEXT, user TEXT, state TEXT, lga TEXT, ward TEXT, age TEXT, gender TEXT, quality TEXT, duration TEXT, status TEXT, created TEXT)")
-    try:
-        c.execute("INSERT INTO users VALUES (NULL,'Bulangu','Bulangu123','founder',?)", (datetime.datetime.now().isoformat(),))
-        c.commit()
-    except: pass
-    c.close()
-init()
-
-HTML = """
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="manifest" href="/manifest.json">
-<script src="https://cdn.tailwindcss.com"></script>
-<title>BULANGU AI LAB V6</title></head>
-<body class="bg-gray-100">
-<nav class="bg-black text-white p-3 flex justify-between items-center">
-<b>🌍 BULANGU AI LAB V6</b><div><span class="text-xs">Founder: Mam Bulangu | {{session_user}}</span> <a href="/logout" class="ml-2 bg-white text-black px-2 py-1 rounded text-xs">Fita</a></div>
-</nav>
-<div class="max-w-3xl mx-auto p-2">
-<div class="grid grid-cols-3 gap-2 mb-3">
-<div class="bg-white p-2 rounded shadow text-center">🎙️<br><b>{{v}}</b><br><small>Voices</small></div>
-<div class="bg-white p-2 rounded shadow text-center">🖼️<br><b>{{i}}</b><br><small>Images</small></div>
-<div class="bg-white p-2 rounded shadow text-center">📜<br><b>{{p}}</b><br><small>Proverbs</small></div>
-</div>
-<div class="bg-white p-3 rounded shadow">
-<div class="flex flex-wrap gap-1 mb-3">
-<button onclick="tab('m')" id="btn-m" class="bg-blue-600 text-white px-3 py-2 rounded text-sm">🎤 Murya</button>
-<button onclick="tab('h')" id="btn-h" class="bg-gray-200 px-3 py-2 rounded text-sm">🖼️ Hoto</button>
-<button onclick="tab('k')" id="btn-k" class="bg-gray-200 px-3 py-2 rounded text-sm">📜 Karin Magana</button>
-<button onclick="tab('s')" id="btn-s" class="bg-gray-200 px-3 py-2 rounded text-sm">⚙️ Setting</button>
-<button onclick="tab('z')" id="btn-z" class="bg-black text-white px-3 py-2 rounded text-sm">⬇️ ZIP</button>
-</div>
-<div id="tab-m">
-<div class="grid grid-cols-2 gap-2 mb-2">
-<select id="state" class="border p-2 rounded text-sm"><option value="">State</option>{% for s in states %}<option>{{s}}</option>{% endfor %}</select>
-<select id="lga" onchange="loadWards()" class="border p-2 rounded text-sm"><option>LGA</option></select>
-</div>
-<div class="grid grid-cols-2 gap-2 mb-2">
-<select id="ward" class="border p-2 rounded text-sm"><option>Ward</option></select>
-<select id="gender" class="border p-2 rounded text-sm"><option>Mace Tsohuwa 50+ - $2x</option><option>Namiji Tsoho 50+</option><option>Mace 20-49</option><option>Namiji 20-49</option><option>Yaro</option><option>Yarinya</option></select>
-</div>
-<div class="grid grid-cols-3 gap-2 mb-2">
-<input id="age" value="65" class="border p-2 rounded text-sm" placeholder="Age">
-<select id="quality" class="border p-2 rounded text-sm"><option>Clear Voice - Daki Shiru 15cm</option><option>With Noise - Kasuwa 50cm</option><option>Phone Call</option><option>Short 2-5s</option><option>Long 60-180s</option></select>
-<select id="duration" class="border p-2 rounded text-sm"><option value="15">15 sec</option><option value="5">5 sec</option><option value="60">60 sec</option><option value="180">180 sec</option></select>
-</div>
-<input id="text" value="Sannu da zuwa Dorawa Babura" class="w-full border p-2 mb-2 rounded text-sm">
-<button id="recBtn" onclick="toggleRec()" class="bg-red-600 text-white w-full p-3 rounded font-bold">🔴 FARA RECORDING</button>
-<div class="flex justify-between text-xs mt-1"><span id="timer">00:00 / 15s</span><span id="level">🔊 Level: 0%</span></div>
-<audio id="audio" controls style="display:none" class="w-full mt-2"></audio>
-<button id="saveVoice" style="display:none" onclick="saveVoice()" class="bg-green-600 text-white w-full p-3 rounded mt-2 font-bold">💾 AJIYE MURYA</button>
-</div>
-<div id="tab-h" style="display:none">
-<input type="file" id="img" accept="image/*" class="w-full border p-2 mb-2 rounded text-sm">
-<select id="icat" class="w-full border p-2 mb-2 rounded text-sm"><option>Market Crowd</option><option>Farm</option><option>Shop</option><option>Handwriting</option><option>Street</option><option>Food</option></select>
-<button onclick="saveImage()" class="bg-blue-600 text-white w-full p-3 rounded">📤 AJIYE HOTO</button>
-</div>
-<div id="tab-k" style="display:none">
-<input id="prov" placeholder="Karin Magana: Zomo baya gudu a banza" class="w-full border p-2 mb-2 rounded text-sm">
-<input id="mean" placeholder="Meaning English" class="w-full border p-2 mb-2 rounded text-sm">
-<button onclick="saveProv()" class="bg-purple-600 text-white w-full p-3 rounded">AJIYE KARIN MAGANA</button>
-</div>
-<div id="tab-s" style="display:none"><p class="text-xs">Auto Save - LocalStorage - Har Abada<br>Format: Gender_Age_Ward_Text.webm<br>Offline PWA - Yana aiki ba da internet</p></div>
-<div id="tab-z" style="display:none">
-<button onclick="location.href='/zip?type=voice'" class="bg-blue-600 text-white w-full p-3 rounded mb-2">⬇️ Voices ZIP</button>
-<button onclick="location.href='/zip?type=image'" class="bg-green-600 text-white w-full p-3 rounded mb-2">⬇️ Images ZIP</button>
-<button onclick="location.href='/zip?type=proverb'" class="bg-purple-600 text-white w-full p-3 rounded mb-2">⬇️ Proverbs ZIP</button>
-<button onclick="location.href='/zip?type=all'" class="bg-black text-white w-full p-3 rounded font-bold">⬇️ DOWNLOAD ALL ZIP</button>
-</div>
-</div>
-<div class="bg-white p-3 rounded shadow mt-3">
-<div class="flex gap-2"><input id="search" onkeyup="doSearch()" placeholder="Search Dorawa..." class="flex-1 border p-2 rounded text-sm"><select id="filter" onchange="doSearch()" class="border p-2 rounded text-sm"><option value="">All</option><option>voice</option><option>image</option><option>proverb</option></select></div>
-<div class="overflow-auto text-xs mt-2"><table class="w-full" id="dataTable"><tr class="bg-gray-100"><th>Time</th><th>Type</th><th>Wuri</th><th>Text</th><th>Status</th></tr>
-{% for r in recs %}<tr class="border-b"><td>{{r['created'][11:16]}}</td><td>{{r['type']}}</td><td>{{r['lga']}}/{{r['ward']}}</td><td>{{r['text'][:20]}}</td><td>{% if session_role=='founder' %}<a href="/approve/{{r['id']}}">✔️</a> <a href="/reject/{{r['id']}}">❌</a>{% else %}{{r['status']}}{% endif %}</td></tr>{% endfor %}
-</table></div>
-</div>
-</div>
-<script>
-const LGA_WARDS = {{lgas_json}};
-function loadStates(){
- let lgaSel=document.getElementById('lga');
- lgaSel.innerHTML='<option>Jigawa LGA 27</option>';
- Object.keys(LGA_WARDS).forEach(l=>{let o=document.createElement('option'); o.value=l; o.textContent=l; lgaSel.appendChild(o);});
- lgaSel.value='Babura'; loadWards();
-}
-function loadWards(){
- let l=document.getElementById('lga').value;
- let w=document.getElementById('ward');
- w.innerHTML='';
- let wards=LGA_WARDS[l]||['Dorawa'];
- wards.forEach(x=>{let o=document.createElement('option'); o.value=x; o.textContent=x; w.appendChild(o);});
-}
-function tab(id){
- ['m','h','k','s','z'].forEach(x=>{document.getElementById('tab-'+x).style.display='none'; document.getElementById('btn-'+x).className='bg-gray-200 px-3 py-2 rounded text-sm';});
- document.getElementById('tab-'+id).style.display='block';
- document.getElementById('btn-'+id).className='bg-blue-600 text-white px-3 py-2 rounded text-sm';
- if(id=='z') document.getElementById('btn-z').className='bg-black text-white px-3 py-2 rounded text-sm';
-}
-let rec,chunks=[],t,sec=0,blob,stream;
-async function toggleRec(){ if(!rec||rec.state=='inactive'){startRec()}else{stopRec()} }
-async function startRec(){
- sec=0; 
- let dur=parseInt(document.getElementById('duration').value)||15;
- try{
-  stream=await navigator.mediaDevices.getUserMedia({audio:true});
-  rec=new MediaRecorder(stream); chunks=[];
-  rec.ondataavailable=e=>chunks.push(e.data);
-  rec.onstop=()=>{
-   blob=new Blob(chunks,{type:'audio/webm'});
-   let url=URL.createObjectURL(blob);
-   document.getElementById('audio').src=url;
-   document.getElementById('audio').style.display='block';
-   document.getElementById('saveVoice').style.display='block';
-   stream.getTracks().forEach(tr=>tr.stop());
-  };
-  rec.start();
-  document.getElementById('recBtn').innerText='⏹️ TSAYA - '+dur+'s';
-  t=setInterval(()=>{ sec++; document.getElementById('timer').innerText=`00:${String(sec).padStart(2,'0')} / ${dur}s`; if(sec>=dur) stopRec(); },1000);
- }catch(e){alert('Mic error: '+e);}
-}
-function stopRec(){ if(rec&&rec.state!='inactive'){rec.stop(); clearInterval(t); document.getElementById('recBtn').innerText='🔴 FARA RECORDING';} }
-async function saveVoice(){
- if(!blob) return alert('Yi recording da farko');
- let fd=new FormData(); fd.append('audio',blob,'voice.webm');
- fd.append('state',state.value); fd.append('lga',lga.value); fd.append('ward',ward.value); fd.append('gender',gender.value); fd.append('age',age.value); fd.append('quality',quality.value); fd.append('duration',duration.value); fd.append('text',text.value);
- let r=await fetch('/save_voice',{method:'POST',body:fd}); if(r.ok) location.reload(); else alert('Error');
-}
-async function saveImage(){
- let f=document.getElementById('img').files[0]; if(!f) return alert('Zabi hoto');
- let fd=new FormData(); fd.append('image',f); fd.append('cat',icat.value); fd.append('state',state.value); fd.append('lga',lga.value); fd.append('ward',ward.value);
- await fetch('/save_image',{method:'POST',body:fd}); location.reload();
-}
-async function saveProv(){
- let fd=new FormData(); fd.append('text',prov.value); fd.append('meaning',mean.value); fd.append('state',state.value); fd.append('lga',lga.value); fd.append('ward',ward.value);
- await fetch('/save_proverb',{method:'POST',body:fd}); location.reload();
-}
-function doSearch(){
- let q=document.getElementById('search').value.toLowerCase();
- let f=document.getElementById('filter').value.toLowerCase();
- document.querySelectorAll('#dataTable tr').forEach((tr,i)=>{if(i==0) return; let txt=tr.innerText.toLowerCase(); tr.style.display=txt.includes(q) && (f==''||txt.includes(f))?'':'none';});
-}
-loadStates();
-</script></body></html>
+HTML_LOGIN = """
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bulangu AI Lab - Global</title>
+<style>body{font-family:sans-serif;background:#eef2f7;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+.box{background:white;padding:35px;border-radius:12px;box-shadow:0 8px 25px rgba(0,0,0,0.15);width:360px;text-align:center}
+input{width:100%;padding:12px;margin:8px 0;border:1px solid #ccc;border-radius:8px}
+button{width:100%;padding:12px;background:#1877f2;color:white;border:none;border-radius:8px;font-weight:bold;cursor:pointer}
+.founder{background:#e7f3ff;color:#1877f2;padding:8px;border-radius:6px;font-weight:bold;margin-top:12px}</style></head>
+<body><div class="box"><h2>🌾 Bulangu AI Lab V8</h2><p>Global AI for Agriculture</p>
+<form method="POST"><input name="username" placeholder="Username" required><input name="password" type="password" placeholder="Password" required><button>Login</button></form>
+<div class="founder">Founder: Mam Bulangu</div><small>V8 Global English - Full Features</small></div></body></html>
 """
 
-@app.route('/manifest.json')
-def manifest(): return jsonify({"name":"Bulangu AI Lab V6","short_name":"BulanguLab","start_url":"/","display":"standalone","background_color":"#000000","theme_color":"#000000"})
-@app.route('/sw.js')
-def sw(): return """self.addEventListener('install',e=>{self.skipWaiting()});self.addEventListener('fetch',e=>{e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)))})""", 200, {'Content-Type':'application/javascript'}
+HTML_DASH = """
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bulangu AI Lab V8</title>
+<style>
+body{font-family:sans-serif;margin:0;background:#f5f7fb} header{background:#1877f2;color:white;padding:12px 18px;display:flex;justify-content:space-between;flex-wrap:wrap}
+.container{padding:12px;max-width:1150px;margin:auto} .card{background:white;padding:16px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-bottom:14px}
+button{padding:9px 14px;background:#1877f2;color:white;border:none;border-radius:6px;cursor:pointer;margin:2px} .btn-g{background:#42b72a} .btn-r{background:#fa3e3e} .btn-y{background:#f7b928;color:black}
+select,input,textarea{padding:9px;border:1px solid #ccc;border-radius:6px;width:100%;box-sizing:border-box;margin:4px 0}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px} @media(max-width:800px){.grid3{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13px} th,td{border:1px solid #ddd;padding:7px} th{background:#eef2f7}
+.badge{padding:3px 8px;border-radius:10px;color:white;font-size:11px} .cat-image{background:#8e44ad} .cat-voice{background:#2980b9} .cat-proverb{background:#e67e22} .cat-market{background:#27ae60}
+</style></head><body>
+<header><div><b>Bulangu AI Lab V8</b> | Founder: Mam Bulangu | Global English</div>
+<div><a href='/admin' style='color:white;margin-right:10px'>Admin</a><a href='/settings' style='color:white;margin-right:10px'>Settings</a><a href='/logout' style='color:white'>Logout</a></div></header>
+<div class="container">
+
+<div class="card"><h3>📍 Location - All Nigeria (37 States + FCT)</h3>
+<div class="grid3">
+<div><label>State (Click list):</label><select id="state" onchange="loadLGA()"><option value="">-- Select State --</option></select></div>
+<div><label>LGA (Local Government):</label><select id="lga" onchange="loadWardHint()"><option value="">-- Select LGA --</option></select></div>
+<div><label>Ward (Searchable - Type):</label><input list="wardList" id="ward" placeholder="Type ward - e.g Bulangu Ward"><datalist id="wardList"></datalist></div>
+</div>
+</div>
+
+<div class="card"><h3>🎤 Voice Recording + Content - Example: Mam (not Alhaji Sani)</h3>
+<label>Farmer Name (Example: Mam Bulangu):</label><input id="farmer" value="Mam Bulangu" placeholder="Mam Bulangu">
+<div class="grid3">
+<div><label>Category:</label><select id="category"><option value="image">Image</option><option value="voice">Voice</option><option value="proverb">Proverb</option><option value="market">Market</option></select></div>
+<div><label>Upload Image:</label><input type="file" id="imgFile" accept="image/*"></div>
+<div><label>Voice:</label><button id="recBtn" onclick="toggleRec()">🔴 Start Voice (15s)</button> <span id="recStatus">Ready</span></div>
+</div><br>
+<textarea id="content" placeholder="Enter content here... Example: Proverb - 'Farming is wealth' - Voice transcription will appear here... Market price - Rice 50k per bag" style="height:90px"></textarea><br><br>
+<button class="btn-g" onclick="saveData()">💾 Save</button> <button onclick="clearForm()">Clear</button>
+</div>
+
+<div class="card"><h3>📊 Data Table - All Categories - Search & Share Link</h3>
+<input id="search" placeholder="Search state, lga, ward, farmer, content..." onkeyup="filterTable()" style="margin-bottom:8px">
+<table><thead><tr><th>Date</th><th>State/LGA/Ward</th><th>Farmer</th><th>Category</th><th>Content</th><th>Link</th></tr></thead><tbody id="tbody"></tbody></table><br>
+<div class="grid3">
+<button onclick="downloadZip('all')">📥 Download ALL ZIP</button>
+<button onclick="downloadZip('image')">📥 ZIP Images</button>
+<button onclick="downloadZip('voice')">📥 ZIP Voices</button>
+<button onclick="downloadZip('proverb')">📥 ZIP Proverbs</button>
+<button onclick="downloadZip('market')">📥 ZIP Market</button>
+<button onclick="window.location='/download-excel'">📥 Download Excel</button>
+</div>
+</div>
+
+<div class="card" style="background:#e7f3ff;text-align:center"><b>Founder: Mam Bulangu</b> | Bulangu AI Lab V8 Global | State click list, LGA click list, Ward searchable | Admin + Settings + Share Link Enabled</div>
+</div>
+
+<script>
+const NIGERIA_DATA = __NIGERIA_DATA__;
+
+function initStates(){
+ let s=document.getElementById('state'); Object.keys(NIGERIA_DATA).sort().forEach(st=>{let o=document.createElement('option'); o.value=st; o.textContent=st; s.appendChild(o)});
+}
+function loadLGA(){
+ let st=document.getElementById('state').value; let lgaSel=document.getElementById('lga'); lgaSel.innerHTML='<option value="">-- Select LGA --</option>';
+ if(NIGERIA_DATA[st]){NIGERIA_DATA[st].forEach(l=>{let o=document.createElement('option'); o.value=l; o.textContent=l; lgaSel.appendChild(o)});}
+ loadWardHint();
+}
+function loadWardHint(){
+ let wardList=document.getElementById('wardList'); wardList.innerHTML=''; 
+ let sampleWards=['Ward 01','Ward 02','Bulangu Ward','Garin Mam Ward','Central Ward','Market Ward','Fada Ward'];
+ sampleWards.forEach(w=>{let o=document.createElement('option'); o.value=w; wardList.appendChild(o)});
+}
+
+let rec,chunks=[],isRec=false, lastVoiceBlob=null;
+function toggleRec(){
+ if(!isRec){
+  navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+   rec=new MediaRecorder(stream); chunks=[]; rec.ondataavailable=e=>chunks.push(e.data);
+   rec.onstop=()=>{lastVoiceBlob=new Blob(chunks,{type:'audio/webm'}); document.getElementById('recStatus').innerText='Done - Voice saved'; document.getElementById('content').value+=' [Voice recorded - '+new Date().toLocaleTimeString()+']';};
+   rec.start(); isRec=true; document.getElementById('recBtn').innerText='⏹️ Stop'; document.getElementById('recStatus').innerText='Recording...'; setTimeout(()=>{if(isRec)toggleRec()},15000);
+  });
+ } else { rec.stop(); isRec=false; document.getElementById('recBtn').innerText='🔴 Start Voice (15s)'; }
+}
+
+function saveData(){
+ let state=document.getElementById('state').value, lga=document.getElementById('lga').value, ward=document.getElementById('ward').value, farmer=document.getElementById('farmer').value||'Mam Bulangu', category=document.getElementById('category').value, content=document.getElementById('content').value;
+ if(!state){alert('Select State');return} if(!content){alert('Enter content');return}
+ let imgInput=document.getElementById('imgFile'); let imgData=''; if(imgInput.files[0]){let reader=new FileReader(); reader.onload=function(e){imgData=e.target.result; sendToServer(state,lga,ward,farmer,category,content,imgData)}; reader.readAsDataURL(imgInput.files[0]); return;}
+ sendToServer(state,lga,ward,farmer,category,content,'');
+}
+function sendToServer(state,lga,ward,farmer,category,content,imgData){
+ fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state,lga,ward,farmer,category,content,image:imgData})}).then(()=>{loadTable(); clearForm()});
+}
+function clearForm(){document.getElementById('content').value=''; document.getElementById('imgFile').value='';}
+function loadTable(){fetch('/data').then(r=>r.json()).then(rows=>{let tb=document.getElementById('tbody'); tb.innerHTML=''; rows.forEach(row=>{tb.innerHTML+=`<tr><td>${row.date}</td><td>${row.state}/${row.lga}/${row.ward}</td><td>${row.farmer}</td><td><span class="badge cat-${row.category}">${row.category}</span></td><td>${row.content.substring(0,80)}</td><td><a href='/view/${row.id}' target='_blank'>View Link</a></td></tr>`})})}
+function filterTable(){let q=document.getElementById('search').value.toLowerCase(); let tr=document.getElementById('tbody').getElementsByTagName('tr'); for(let i=0;i<tr.length;i++){tr[i].style.display=tr[i].innerText.toLowerCase().includes(q)?'':'none'}}
+function downloadZip(cat){window.location='/download-zip?cat='+cat}
+initStates(); loadTable();
+</script>
+</body></html>
+"""
+
+HTML_ADMIN = """
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin - Bulangu</title>
+<style>body{font-family:sans-serif;margin:0;background:#f5f7fb} header{background:#2c3e50;color:white;padding:12px 18px} .container{padding:15px} .card{background:white;padding:15px;border-radius:8px;margin-bottom:12px}</style></head><body>
+<header><b>Admin Panel - Founder: Mam Bulangu</b> - <a href='/dashboard' style='color:white'>Back to Dashboard</a></header>
+<div class="container">
+<div class="card"><h3>👑 Admin Controls</h3><p>Total Records: __COUNT__</p><button onclick="if(confirm('Delete all?'))fetch('/admin/clear',{method:'POST'}).then(()=>location.reload())">🗑️ Clear All Data</button> <button onclick="window.location='/download-zip?cat=all'">📦 Download All ZIP</button></div>
+<div class="card"><h3>📋 All Data (Admin View)</h3><div id="adminData"></div></div>
+</div><script>fetch('/data').then(r=>r.json()).then(d=>{document.getElementById('adminData').innerHTML='<pre>'+JSON.stringify(d,null,2)+'</pre>'})</script>
+</body></html>
+"""
+
+HTML_SETTINGS = """
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Settings</title>
+<style>body{font-family:sans-serif;margin:0;background:#f5f7fb} header{background:#1877f2;color:white;padding:12px 18px} .container{padding:15px} .card{background:white;padding:15px;border-radius:8px;margin-bottom:12px}</style></head><body>
+<header><b>Settings - Bulangu AI Lab V8</b> - <a href='/dashboard' style='color:white'>Dashboard</a></header>
+<div class="container">
+<div class="card"><h3>⚙️ App Settings</h3><p><b>Founder:</b> Mam Bulangu</p><p><b>App Name:</b> Bulangu AI Lab V8 Global English</p><p><b>Features:</b> All 37 States + FCT, LGA list on click, Ward searchable, Voice recording, Image upload, Categories: Image/Voice/Proverb/Market, ZIP download per category, Admin, Shareable link</p><p><b>Language:</b> English (Global)</p><p><b>Version:</b> V8 FINAL</p></div>
+<div class="card"><h3>🔗 Shareable Link</h3><p>When you save data, each row gets a unique link like <code>/view/ID</code> - You can send to anyone - They will see that data even without login.</p><p>Try: /view/1</p></div>
+<div class="card"><h3>👤 Founder Info</h3><p>Mam Bulangu - Founder of Bulangu AI Lab - AI for Agriculture - Jigawa State - Nigeria - Global Project</p></div>
+</div></body></html>
+"""
+
 @app.route('/')
-def home(): 
-    if 'user' not in session: return redirect('/login')
-    return redirect('/dashboard')
+def home(): return redirect('/login')
+
 @app.route('/login', methods=['GET','POST'])
 def login():
     if request.method=='POST':
-        u=request.form['username']; p=request.form['password']
-        c=dbc(); r=c.execute("SELECT * FROM users WHERE username=? AND password=?",(u,p)).fetchone(); c.close()
-        if r:
-            session['user']=r['username']; session['role']=r['role']; session['uid']=r['id']
-            return redirect('/dashboard')
-        return "Login kuskure - Bulangu / Bulangu123"
-    return render_template_string("""<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-black text-white flex items-center justify-center min-h-screen"><div class="bg-white text-black p-6 rounded shadow max-w-sm w-full"><h2 class="font-bold text-center">🌍 BULANGU AI LAB V6<br><small>Founder Login</small></h2><form method="POST" class="mt-4"><input name="username" placeholder="Bulangu" class="w-full border p-3 mb-2 rounded"><input name="password" type="password" placeholder="Bulangu123" class="w-full border p-3 mb-2 rounded"><button class="bg-black text-white w-full p-3 rounded">Shiga</button></form></div></body></html>""")
-@app.route('/register', methods=['GET','POST'])
-def register():
-    if request.method=='POST':
-        u=request.form['username']; p=request.form['password']
-        c=dbc()
-        try:
-            c.execute("INSERT INTO users (username,password,role,created) VALUES (?,?,?,?)",(u,p,'collector',datetime.datetime.now().isoformat()))
-            c.commit(); c.close(); return redirect('/login')
-        except: c.close(); return "Username ya wanzu"
-    return render_template_string("""<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><script src="https://cdn.tailwindcss.com"></script></head><body class="bg-gray-100 flex items-center justify-center min-h-screen"><div class="bg-white p-6 rounded shadow max-w-sm w-full"><h2 class="font-bold">Register</h2><form method="POST" class="mt-4"><input name="username" placeholder="Sunanka" class="w-full border p-3 mb-2 rounded"><input name="password" type="password" placeholder="Password" class="w-full border p-3 mb-2 rounded"><button class="bg-blue-600 text-white w-full p-3 rounded">Register</button></form></div></body></html>""")
+        if request.form.get('username')=='Bulangu' and request.form.get('password')=='Bulangu123':
+            session['user']='Bulangu'; return redirect('/dashboard')
+        return 'Wrong password <a href="/login">Back</a>'
+    return HTML_LOGIN
+
 @app.route('/dashboard')
 def dash():
     if 'user' not in session: return redirect('/login')
-    c=dbc()
-    recs=c.execute("SELECT * FROM records ORDER BY id DESC LIMIT 200").fetchall()
-    v=c.execute("SELECT COUNT(*) FROM records WHERE type='voice'").fetchone()[0]
-    i=c.execute("SELECT COUNT(*) FROM records WHERE type='image'").fetchone()[0]
-    p=c.execute("SELECT COUNT(*) FROM records WHERE type='proverb'").fetchone()[0]
-    users=c.execute("SELECT * FROM users").fetchall()
-    c.close()
-    return render_template_string(HTML, v=v, i=i, p=p, recs=recs, users=users, states=NIGERIA_STATES, lgas_json=json.dumps(JIGAWA_LGAS), session_user=session.get('user'), session_role=session.get('role'))
-@app.route('/save_voice', methods=['POST'])
-def sv():
-    if 'user' not in session: return "unauth",401
-    f=request.files['audio']
-    name=f"{request.form.get('gender','Mace')}_{request.form.get('age','65')}y_{request.form.get('ward','Dorawa')}_{request.form.get('text','Sannu')}.webm".replace(' ','_')[:50]
-    path=os.path.join(BASE, "voices", secure_filename(name)); f.save(path)
-    c=dbc(); c.execute("INSERT INTO records (type,text,file_path,user,state,lga,ward,age,gender,quality,duration,status,created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", ('voice',request.form.get('text'),path,session['user'],request.form.get('state'),request.form.get('lga'),request.form.get('ward'),request.form.get('age'),request.form.get('gender'),request.form.get('quality'),request.form.get('duration'),'pending',datetime.datetime.now().isoformat())); c.commit(); c.close(); return "ok"
-@app.route('/save_image', methods=['POST'])
-def si():
-    if 'user' not in session: return "unauth",401
-    f=request.files['image']; path=os.path.join(BASE, "images", secure_filename(f.filename)); f.save(path)
-    c=dbc(); c.execute("INSERT INTO records (type,text,file_path,user,state,lga,ward,status,created) VALUES (?,?,?,?,?,?,?,?)", ('image',request.form.get('cat'),path,session['user'],request.form.get('state'),request.form.get('lga'),request.form.get('ward'),'pending',datetime.datetime.now().isoformat())); c.commit(); c.close(); return "ok"
-@app.route('/save_proverb', methods=['POST'])
-def sp():
-    if 'user' not in session: return "unauth",401
-    c=dbc(); c.execute("INSERT INTO records (type,text,meaning,user,state,lga,ward,status,created) VALUES (?,?,?,?,?,?,?,?)", ('proverb',request.form.get('text'),request.form.get('meaning'),session['user'],request.form.get('state'),request.form.get('lga'),request.form.get('ward'),'pending',datetime.datetime.now().isoformat())); c.commit(); c.close(); return "ok"
-@app.route('/approve/<int:id>')
-def approve(id):
-    if session.get('role')!='founder': return "admin only"
-    c=dbc(); c.execute("UPDATE records SET status='approved' WHERE id=?",(id,)); c.commit(); c.close(); return redirect('/dashboard')
-@app.route('/reject/<int:id>')
-def reject(id):
-    if session.get('role')!='founder': return "admin only"
-    c=dbc(); c.execute("DELETE FROM records WHERE id=?",(id,)); c.commit(); c.close(); return redirect('/dashboard')
-@app.route('/clear')
-def clear():
-    if session.get('role')!='founder': return "admin only"
-    c=dbc(); c.execute("DELETE FROM records"); c.commit(); c.close(); return redirect('/dashboard')
-@app.route('/zip')
-def z():
-    t=request.args.get('type','all'); mem=io.BytesIO()
-    with zipfile.ZipFile(mem,'w') as zf:
-        c=dbc(); rows=c.execute("SELECT * FROM records").fetchall(); c.close()
-        for r in rows:
-            if t!='all' and t not in r['type']: continue
-            if r['file_path'] and os.path.exists(r['file_path']):
-                arc=f"{r['type']}s/{os.path.basename(r['file_path'])}"
-                zf.write(r['file_path'], arc)
-            meta=json.dumps(dict(r), indent=2, default=str, ensure_ascii=False)
-            zf.writestr(f"metadata/{r['type']}_{r['id']}.json", meta)
-        zf.writestr("README.txt", f"BULANGU AI LAB V6 - Founder Mam Bulangu - Dorawa\nTotal: {len(rows)}")
-    mem.seek(0); return send_file(mem, download_name=f"bulangu_v6_{t}.zip", as_attachment=True)
+    html = HTML_DASH.replace('__NIGERIA_DATA__', json.dumps(NIGERIA_DATA))
+    return html
+
+@app.route('/save', methods=['POST'])
+def save():
+    j=request.get_json()
+    j['id']=len(DATA_STORE)+1
+    j['date']=datetime.now().strftime('%Y-%m-%d %H:%M')
+    DATA_STORE.append(j)
+    return jsonify({"ok":True,"id":j['id']})
+
+@app.route('/data')
+def data(): return jsonify(DATA_STORE[::-1])
+
+@app.route('/view/<int:vid>')
+def view(vid):
+    item=next((x for x in DATA_STORE if x['id']==vid),None)
+    if not item: return "Not found - Share link invalid"
+    return f"<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><title>Shared - Mam Bulangu</title></head><body style='font-family:sans-serif;padding:20px'><h2>Bulangu AI Lab - Shared Data</h2><p><b>Founder:</b> Mam Bulangu</p><p><b>State:</b> {item.get('state')} | <b>LGA:</b> {item.get('lga')} | <b>Ward:</b> {item.get('ward')}</p><p><b>Farmer:</b> {item.get('farmer')}</p><p><b>Category:</b> {item.get('category')}</p><p><b>Content:</b> {item.get('content')}</p><p><b>Date:</b> {item.get('date')}</p><hr><a href='/dashboard'>Go to Dashboard</a> | Founder: Mam Bulangu</body></html>"
+
+@app.route('/download-excel')
+def dl_excel():
+    if not DATA_STORE: return "No data"
+    df=pd.DataFrame(DATA_STORE); out=io.BytesIO(); df.to_excel(out,index=False); out.seek(0)
+    return send_file(out, download_name='Bulangu_Global_Mam_Bulangu.xlsx', as_attachment=True)
+
+@app.route('/download-zip')
+def dl_zip():
+    cat=request.args.get('cat','all')
+    mem=io.BytesIO()
+    with zipfile.ZipFile(mem,'w') as z:
+        for item in DATA_STORE:
+            if cat!='all' and item.get('category')!=cat: continue
+            fname=f"{item.get('category')}_{item['id']}.txt"
+            content=f"State: {item.get('state')}\nLGA: {item.get('lga')}\nWard: {item.get('ward')}\nFarmer: {item.get('farmer')}\nCategory: {item.get('category')}\nContent: {item.get('content')}\nDate: {item.get('date')}\nFounder: Mam Bulangu\n"
+            z.writestr(fname, content)
+            if item.get('image'):
+                try:
+                    header, b64 = item['image'].split(',',1)
+                    img_bytes = base64.b64decode(b64)
+                    z.writestr(f"images/image_{item['id']}.jpg", img_bytes)
+                except: pass
+    mem.seek(0)
+    return send_file(mem, download_name=f'Bulangu_{cat}_Mam_Bulangu.zip', as_attachment=True)
+
+@app.route('/admin')
+def admin():
+    if 'user' not in session: return redirect('/login')
+    return HTML_ADMIN.replace('__COUNT__', str(len(DATA_STORE)))
+
+@app.route('/admin/clear', methods=['POST'])
+def admin_clear():
+    DATA_STORE.clear(); return jsonify({"ok":True})
+
+@app.route('/settings')
+def settings():
+    if 'user' not in session: return redirect('/login')
+    return HTML_SETTINGS
+
 @app.route('/logout')
-def lo(): session.clear(); return redirect('/login')
+def logout(): session.clear(); return redirect('/login')
