@@ -182,6 +182,7 @@ HTML_SETTINGS = """
 """
 
 @app.route('/')
+@app.route('/api/index')
 def home(): return redirect('/login')
 
 @app.route('/login', methods=['GET','POST'])
