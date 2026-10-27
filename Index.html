@@ -1,0 +1,76 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.tailwindcss.com"></script><title>BULANGU AI LAB V5</title></head>
+<body class="bg-gray-100">
+<nav class="bg-black text-white p-3 text-center"><b>🌍 BULANGU AI LAB V5 - Dorawa Babura Jigawa</b></nav>
+<div class="max-w-2xl mx-auto p-3">
+<div class="bg-white p-3 rounded shadow text-center mb-3">
+🎙️ Voices: <b id="vc">0</b> | 🖼️ Images: <b id="ic">0</b> | 📜 Proverbs: <b id="pc">0</b><br>
+<small>Founder: Bulangu - Auto Save: LocalStorage Har Abada</small>
+</div>
+
+<div class="bg-white p-4 rounded shadow">
+<div class="flex gap-2 mb-3">
+<button onclick="show('m')" class="bg-blue-600 text-white px-4 py-2 rounded">Murya</button>
+<button onclick="show('h')" class="bg-gray-200 px-4 py-2 rounded">Hoto</button>
+<button onclick="show('k')" class="bg-gray-200 px-4 py-2 rounded">Karin Magana</button>
+<button onclick="show('z')" class="bg-gray-200 px-4 py-2 rounded">ZIP</button>
+</div>
+
+<div id="m">
+<select id="state" class="w-full border p-2 mb-2 rounded"><option>Jigawa</option><option>Kano</option><option>Kaduna</option><option>Lagos</option><option>FCT</option></select>
+<select id="lga" class="w-full border p-2 mb-2 rounded"><option>Babura</option><option>Auyo</option><option>Dutse</option><option>Gumel</option><option>Hadejia</option></select>
+<select id="ward" class="w-full border p-2 mb-2 rounded"><option>Dorawa</option><option>Arewa</option><option>Battali</option><option>Garu</option><option>Kyambo</option></select>
+<select id="gender" class="w-full border p-2 mb-2 rounded"><option>Mace Tsohuwa 50+ - Mafi Daraja 2x</option><option>Namiji Tsoho 50+</option><option>Mace 20-49</option><option>Namiji 20-49</option></select>
+<input id="age" value="65" class="w-full border p-2 mb-2 rounded" placeholder="Shekaru 65">
+<select id="quality" class="w-full border p-2 mb-2 rounded"><option>Clear Voice - Daki Shiru</option><option>With Noise - Kasuwa</option><option>Short 2-5s</option><option>Long 60-180s</option></select>
+<input id="text" value="Sannu da zuwa Dorawa" class="w-full border p-2 mb-2 rounded">
+<button id="recBtn" onclick="toggle()" class="bg-red-600 text-white w-full p-3 rounded font-bold">🔴 Fara Recording</button>
+<p id="timer" class="text-center">00:00 / 15s</p>
+<audio id="audio" controls style="display:none" class="w-full"></audio>
+<button id="saveV" style="display:none" onclick="saveVoice()" class="bg-green-600 text-white w-full p-3 rounded mt-2">💾 Ajiye Murya</button>
+</div>
+
+<div id="h" style="display:none">
+<input type="file" id="img" accept="image/*" class="w-full border p-2 mb-2 rounded">
+<select id="icat" class="w-full border p-2 mb-2 rounded"><option>Market Crowd</option><option>Farm - Gona</option><option>Shop</option><option>Handwriting</option></select>
+<button onclick="saveImage()" class="bg-blue-600 text-white w-full p-3 rounded">Ajiye Hoto + Metadata</button>
+<div id="imgPreview"></div>
+</div>
+
+<div id="k" style="display:none">
+<input id="prov" placeholder="Zomo baya gudu a banza" class="w-full border p-2 mb-2 rounded">
+<input id="mean" placeholder="Ma'anarsa Turanci - A hare does not run in vain" class="w-full border p-2 mb-2 rounded">
+<button onclick="saveProv()" class="bg-purple-600 text-white w-full p-3 rounded">Ajiye Karin Magana</button>
+</div>
+
+<div id="z" style="display:none">
+<p class="text-sm">File name: Gender_Age_Ward_Text.webm<br>Auto Save: Har Abada a wayarka</p>
+<button onclick="downloadAll()" class="bg-black text-white w-full p-3 rounded mt-3">⬇️ DOWNLOAD ALL AS JSON + ZIP INFO</button>
+<p class="text-xs mt-2">Idan kana son siyarwa ga Google - Copy wannan JSON - Zip din kuma zaka hada da hannu</p>
+<pre id="jsonOut" class="bg-gray-100 p-2 text-xs overflow-auto max-h-60 mt-2"></pre>
+</div>
+</div>
+
+<div class="bg-white p-3 rounded shadow mt-3">
+<input id="s" onkeyup="doSearch()" placeholder="Search Dorawa, Sannu..." class="w-full border p-2 rounded mb-2">
+<div class="overflow-auto text-xs"><table class="w-full" id="table"><tr class="bg-gray-100"><th>Time</th><th>Type</th><th>Wuri</th><th>Text</th></tr></table></div>
+</div>
+</div>
+
+<script>
+let rec,chunks=[],timer,sec=0,blob;
+let data = JSON.parse(localStorage.getItem('bulangu_v5')||'[]');
+function save(){localStorage.setItem('bulangu_v5', JSON.stringify(data)); render();}
+function show(id){['m','h','k','z'].forEach(x=>document.getElementById(x).style.display='none'); document.getElementById(id).style.display='block';}
+function toggle(){if(!rec||rec.state=='inactive'){start()}else{stop()}}
+async function start(){sec=0; let s=await navigator.mediaDevices.getUserMedia({audio:true}); rec=new MediaRecorder(s); chunks=[]; rec.ondataavailable=e=>chunks.push(e.data); rec.onstop=()=>{blob=new Blob(chunks,{type:'audio/webm'}); audio.src=URL.createObjectURL(blob); audio.style.display='block'; saveV.style.display='block';}; rec.start(); recBtn.innerText='⏹️ Tsaya'; timer=setInterval(()=>{sec++; document.getElementById('timer').innerText=`00:${sec} / 15s`; if(sec>=15) stop();},1000);}
+function stop(){if(rec){rec.stop(); clearInterval(timer); recBtn.innerText='🔴 Fara Recording';}}
+function saveVoice(){let r={id:Date.now(), type:'voice', text:text.value, state:state.value, lga:lga.value, ward:ward.value, gender:gender.value, age:age.value, quality:quality.value, created:new Date().toISOString()}; data.push(r); save(); alert('Ajiye! Voices: '+data.filter(x=>x.type=='voice').length);}
+function saveImage(){let f=img.files[0]; if(!f) return alert('Zabi hoto'); let r={id:Date.now(), type:'image', text:icat.value, file:f.name, state:state.value, lga:lga.value, ward:ward.value, created:new Date().toISOString()}; data.push(r); save(); alert('Ajiye Hoto!');}
+function saveProv(){let r={id:Date.now(), type:'proverb', text:prov.value, meaning:mean.value, state:state.value, lga:lga.value, ward:ward.value, created:new Date().toISOString()}; data.push(r); save(); alert('Ajiye Karin Magana!');}
+function render(){let t=document.getElementById('table'); t.innerHTML='<tr class="bg-gray-100"><th>Time</th><th>Type</th><th>Wuri</th><th>Text</th></tr>'; data.slice().reverse().forEach(r=>{let tr=document.createElement('tr'); tr.className='border-b'; tr.innerHTML=`<td>${r.created.slice(11,16)}</td><td>${r.type}</td><td>${r.lga}/${r.ward}/${r.age||''}</td><td>${r.text}</td>`; t.appendChild(tr);}); document.getElementById('vc').innerText=data.filter(x=>x.type=='voice').length; document.getElementById('ic').innerText=data.filter(x=>x.type=='image').length; document.getElementById('pc').innerText=data.filter(x=>x.type=='proverb').length; document.getElementById('jsonOut').innerText=JSON.stringify(data, null, 2);}
+function downloadAll(){let blob=new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}); let a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='bulangu_v5_all_'+new Date().toISOString().slice(0,10)+'.json'; a.click();}
+function doSearch(){let q=s.value.toLowerCase(); document.querySelectorAll('#table tr').forEach((tr,i)=>{if(i==0) return; tr.style.display=tr.innerText.toLowerCase().includes(q)?'':'none';});}
+render();
+</script></body></html>
